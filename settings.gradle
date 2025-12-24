@@ -1,0 +1,23 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+        flatDir {
+            dirs 'common-aar'
+        }
+    }
+}
+rootProject.name = "RapidOcrAndroidOnnx"
+include ':app'
+include ':OcrLibrary'
+// Temporarily disabled appjava module due to compilation issues
+// include ':appjava'

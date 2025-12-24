@@ -1,0 +1,118 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'kotlin-parcelize'
+    // 移除kotlin-kapt以解决模块访问问题
+}
+
+android {
+    namespace 'com.benjaminwan.ocr.onnx'
+
+    signingConfigs {
+        ocr {
+            keyAlias 'baipiao'
+            keyPassword 'baipiao'
+            storeFile file('../keystore/baipiao.keystore')
+            storePassword 'baipiao'
+        }
+    }
+
+    compileSdkVersion compile_sdk_version
+
+    defaultConfig {
+        applicationId "com.benjaminwan.ocr.onnx"
+        minSdkVersion min_sdk_version
+        targetSdkVersion target_sdk_version
+        versionCode project_version_code
+        versionName project_version_name
+        signingConfig signingConfigs.ocr
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_11.toString()
+    }
+
+    // kapt {
+    //     correctErrorTypes = true
+    // }
+
+    applicationVariants.all {
+        variant ->
+            variant.outputs.all {
+                outputFileName = "${rootProject.name}-${defaultConfig.versionName}-${variant.buildType.name}.apk"
+            }
+    }
+
+    viewBinding {
+        enabled = true
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: "libs", include: ["*.jar"])
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    //Kotlin
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+
+    //coroutines
+    def coroutines_version = '1.6.1'
+    //implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutines_version"
+
+    //Android
+    implementation 'androidx.core:core-ktx:1.9.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.recyclerview:recyclerview:1.2.1'
+
+    //lifecycle
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.5.1'
+
+    //glide
+    implementation 'com.github.bumptech.glide:glide:4.13.2'
+    implementation project(":OcrLibrary")
+
+    implementation 'com.github.chrisbanes:PhotoView:2.3.0'
+
+    // 临时移除Epoxy依赖以解决KAPT问题
+    // def epoxyVersion = '5.0.0'
+    // implementation "com.airbnb.android:epoxy:$epoxyVersion"
+    // kapt "com.airbnb.android:epoxy-processor:$epoxyVersion"
+
+    // CameraX core library
+    def camerax_version = '1.2.1'
+    implementation "androidx.camera:camera-core:$camerax_version"
+    // CameraX Camera2 extensions
+    implementation "androidx.camera:camera-camera2:$camerax_version"
+    // CameraX Lifecycle library
+    implementation "androidx.camera:camera-lifecycle:$camerax_version"
+    // CameraX View class
+    implementation "androidx.camera:camera-view:$camerax_version"
+
+    //cameraMask 相机遮罩
+    // implementation 'jsc.kit.cameramask:camera-mask:0.3.0' // 暂时注释掉以解决依赖问题
+
+    //runWithPermissions 申请权限
+    implementation 'com.afollestad.assent:core:3.0.0-RC4'
+    implementation 'com.afollestad.assent:rationales:3.0.0-RC4'
+
+    //Logger
+    implementation 'com.orhanobut:logger:2.2.0'
+
+    implementation(name: 'IdCardView-1.0', ext: 'aar')
+}
