@@ -19,9 +19,14 @@ import java.util.Locale
  *
  * 功能：
  * 1. 按阅读顺序排列版面元素
- * 2. 裁剪并保存图片区域
+ * 2. 裁剪并保存图片区域（figure跳过OCR）
  * 3. 识别表格区域并转换为Markdown表格格式
  * 4. 生成完整的Markdown文档
+ *
+ * 处理策略：
+ * - Figure区域：裁剪保存，跳过通用OCR，单独处理
+ * - 文本区域：正常进行OCR识别
+ * - 表格区域：裁剪保存，用于表格识别
  */
 class Layout2MarkdownConverter(private val context: Context) {
 
@@ -44,6 +49,9 @@ class Layout2MarkdownConverter(private val context: Context) {
             "equation" to "#9C27B0",
             "caption" to "#FF9800"
         )
+
+        // Figure区域特殊标记
+        private const val FIGURE_SKIP_MARKER = "figure|skipped|figure_"
     }
 
     // 资源保存目录
@@ -57,12 +65,14 @@ class Layout2MarkdownConverter(private val context: Context) {
      * @param layoutResult 版面分析结果
      * @param originalImage 原图（用于裁剪区域）
      * @param saveResources 是否保存裁剪的图片资源
+     * @param skipFigureOcr 是否跳过figure区域的OCR识别（true=裁剪保存figure，单独处理）
      * @return 转换后的Markdown字符串
      */
     fun convert(
         layoutResult: LayoutResult,
         originalImage: Bitmap,
-        saveResources: Boolean = true
+        saveResources: Boolean = true,
+        skipFigureOcr: Boolean = true
     ): String {
         // 初始化资源目录
         if (saveResources) {
@@ -81,6 +91,8 @@ class Layout2MarkdownConverter(private val context: Context) {
         // 用于跟踪当前上下文
         var lastFigureNum = 0
         var lastTableNum = 0
+        // 存储figure区域的OCR结果（如果单独处理）
+        val figureOcrResults = mutableMapOf<Int, String>()
 
         for ((index, layoutBox) in sortedBoxes.withIndex()) {
             val elementType = getElementType(layoutBox.typeName)
@@ -98,17 +110,36 @@ class Layout2MarkdownConverter(private val context: Context) {
                     figureCount++
                     val figureNum = figureCount
 
+                    // 检查是否为跳过的figure区域
+                    val isSkippedFigure = layoutBox.typeName.startsWith(FIGURE_SKIP_MARKER)
+
                     if (saveResources) {
-                        // 裁剪并保存图片
+                        // 裁剪并保存figure图片
                         val figureImage = cropBitmap(originalImage, layoutBox.boxPoint)
                         if (figureImage != null) {
                             val figureFileName = "figure_${figureNum}_${System.currentTimeMillis()}.png"
                             saveBitmap(figureImage, figureFileName)
-                            content.append("![图 $figureNum](images/$figureFileName)")
+
+                            if (skipFigureOcr) {
+                                // 跳过通用OCR，figure区域只保存图片
+                                content.append("![图 $figureNum](figures/$figureFileName)")
+                            } else {
+                                // 正常OCR处理
+                                val ocrContent = extractOcrContent(layoutBox.typeName)
+                                content.append("![图 $figureNum](figures/$figureFileName)")
+                                if (ocrContent.isNotEmpty()) {
+                                    content.append("\n\n*Figure内容: $ocrContent*")
+                                }
+                            }
                             figureImage.recycle()
                         }
                     } else {
                         content.append("![图 $figureNum]()")
+                    }
+
+                    // 如果是跳过的figure，提取figure编号并存储标记
+                    if (isSkippedFigure) {
+                        lastFigureNum = figureNum
                     }
                 }
                 "figure_caption" -> {
@@ -124,7 +155,16 @@ class Layout2MarkdownConverter(private val context: Context) {
                         val tableImage = cropBitmap(originalImage, layoutBox.boxPoint)
                         if (tableImage != null) {
                             val tableFileName = "table_${tableNum}_${System.currentTimeMillis()}.png"
-                            saveBitmap(tableImage, tableFileName)
+                            // 保存到tables子目录
+                            val tablesDir = File(resourceDir, "tables")
+                            val file = File(tablesDir, tableFileName)
+                            try {
+                                FileOutputStream(file).use { out ->
+                                    tableImage.compress(Bitmap.CompressFormat.PNG, 100, out)
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                             tableImage.recycle()
                         }
                     }
@@ -141,7 +181,7 @@ class Layout2MarkdownConverter(private val context: Context) {
                 }
                 "equation" -> {
                     // 公式区域
-                    content.append("$$公式$$")
+                    content.append("\$\$formula\$\$")
                 }
                 "reference" -> {
                     content.append("> ")
@@ -242,6 +282,24 @@ class Layout2MarkdownConverter(private val context: Context) {
     }
 
     /**
+     * 从typeName中提取OCR内容
+     * 格式：typeName|ocrContent 或 figure|skipped|figure_N
+     */
+    private fun extractOcrContent(typeName: String): String {
+        if (typeName.contains("|")) {
+            val parts = typeName.split("|", limit = 2)
+            if (parts.size >= 2) {
+                // 跳过figure标记
+                if (parts[0] == "figure" && parts[1] == "skipped") {
+                    return ""
+                }
+                return parts[1].trim()
+            }
+        }
+        return ""
+    }
+
+    /**
      * 根据多边形坐标裁剪Bitmap
      */
     private fun cropBitmap(source: Bitmap, points: ArrayList<Point>): Bitmap? {
@@ -279,8 +337,12 @@ class Layout2MarkdownConverter(private val context: Context) {
         resourceDir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "layout2md_$timestamp")
         resourceDir?.mkdirs()
 
-        // 创建images子目录
+        // 创建images子目录（用于一般图片）
         File(resourceDir, "images").mkdirs()
+        // 创建figures子目录（用于figure区域裁剪）
+        File(resourceDir, "figures").mkdirs()
+        // 创建tables子目录（用于表格区域裁剪）
+        File(resourceDir, "tables").mkdirs()
     }
 
     /**
@@ -338,7 +400,7 @@ class Layout2MarkdownConverter(private val context: Context) {
 
                 // 绘制标签
                 val labelPaint = Paint().apply {
-                    color = color
+                    this.color = this@apply.color
                     style = Paint.Style.FILL
                     textSize = 32f
                 }

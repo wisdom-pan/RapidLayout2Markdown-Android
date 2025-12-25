@@ -26,9 +26,8 @@ import com.afollestad.assent.isAllGranted
 import com.afollestad.assent.rationale.createDialogRationale
 import com.benjaminwan.ocr.onnx.app.App
 import com.benjaminwan.ocr.onnx.databinding.ActivityGalleryBinding
-// Dialog classes removed due to epoxy dependencies
-// import com.benjaminwan.ocr.onnx.dialog.DebugDialog
-// import com.benjaminwan.ocr.onnx.dialog.TextResultDialog
+// Dialog classes
+import com.benjaminwan.ocr.onnx.dialog.FullMarkdownDialogFragment
 import com.benjaminwan.ocr.onnx.utils.decodeUri
 import com.benjaminwan.ocr.onnx.utils.showToast
 import com.benjaminwan.ocrlibrary.OcrResult
@@ -67,6 +66,10 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
         binding.layoutResultBtn.setOnClickListener(this)
         binding.markdownBtn.setOnClickListener(this)
 
+        // 测试按钮
+        binding.testFigureSkipBtn.setOnClickListener(this)
+        binding.testAllBtn.setOnClickListener(this)
+
         binding.stopBtn.isEnabled = false
         binding.doAngleSw.isChecked = App.ocrEngine.doAngle
         binding.mostAngleSw.isChecked = App.ocrEngine.mostAngle
@@ -91,6 +94,10 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
         binding.layoutBtn.isEnabled = false
         binding.layoutResultBtn.isEnabled = false
         binding.markdownBtn.isEnabled = false
+
+        // 初始化测试按钮
+        binding.testFigureSkipBtn.isEnabled = false
+        binding.testAllBtn.isEnabled = false
 
         // 初始化进度显示
         binding.progressLayout.visibility = View.GONE
@@ -205,6 +212,24 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
                 val result = layoutResult ?: return
                 showMarkdownResults(result)
             }
+            R.id.testFigureSkipBtn -> {
+                val img = selectedImg
+                if (img == null) {
+                    showToast("请先选择一张图片")
+                    return
+                }
+                // 测试figure跳过功能
+                testFigureSkip(img)
+            }
+            R.id.testAllBtn -> {
+                val img = selectedImg
+                if (img == null) {
+                    showToast("请先选择一张图片")
+                    return
+                }
+                // 完整测试：先版面分析，再显示结果
+                testFullPipeline(img)
+            }
             else -> {
             }
         }
@@ -286,6 +311,9 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
 
             // 启用版面分析按钮
             binding.layoutBtn.isEnabled = true
+            // 启用测试按钮
+            binding.testFigureSkipBtn.isEnabled = true
+            binding.testAllBtn.isEnabled = true
         }
     }
 
@@ -305,6 +333,8 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
         // 重置版面分析按钮状态
         binding.layoutResultBtn.isEnabled = false
         binding.markdownBtn.isEnabled = false
+        binding.testFigureSkipBtn.isEnabled = false
+        binding.testAllBtn.isEnabled = false
 
         // 隐藏进度显示
         binding.progressLayout.visibility = View.GONE
@@ -484,6 +514,41 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
             }
     }
 
+    /**
+     * 显示完整的Markdown结果（使用DialogFragment支持更大尺寸）
+     */
+    private fun showFullMarkdownResults(result: com.benjaminwan.ocrlibrary.LayoutResult) {
+        val markdown = result.markdown
+
+        // 保存Markdown文件到输出目录
+        saveMarkdownToFile(markdown)
+
+        // 使用DialogFragment来显示完整内容
+        val dialog = FullMarkdownDialogFragment.newInstance(markdown)
+        dialog.show(supportFragmentManager, "fullMarkdown")
+    }
+
+    // 保存Markdown文件到输出目录
+    private fun saveMarkdownToFile(markdown: String): String {
+        return try {
+            val timestamp = System.currentTimeMillis()
+            val fileName = "result_${timestamp}.md"
+            val outputDir = getOutputDir()
+            val file = File(outputDir, fileName)
+
+            FileOutputStream(file).use { out ->
+                out.write(markdown.toByteArray())
+            }
+
+            Logger.i("Markdown已保存: ${file.absolutePath}")
+            showToast("结果已保存到: ${file.absolutePath}")
+            file.absolutePath
+        } catch (e: Exception) {
+            Logger.e("保存Markdown失败: ${e.message}")
+            ""
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         detectJob?.cancel()
@@ -500,34 +565,66 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
         val progress: Int
     )
 
-    // 对版面区域进行OCR内容识别
+    // Figure信息数据类
+    data class FigureInfo(
+        val ocrText: String = "",
+        val imagePath: String = ""
+    )
+
+    // 对版面区域进行OCR内容识别（跳过figure区域）
     private fun recognizeLayoutContent(
         originalImg: Bitmap,
         layoutResult: com.benjaminwan.ocrlibrary.LayoutResult
     ): com.benjaminwan.ocrlibrary.LayoutResult {
         val updatedLayoutBoxes = mutableListOf<com.benjaminwan.ocrlibrary.LayoutBox>()
+        val figureResults = mutableMapOf<Int, FigureInfo>() // 存储figure区域的OCR结果和图片路径
+        var figureCount = 0
 
         // 对每个版面区域进行OCR识别
         layoutResult.layoutBoxes.forEachIndexed { index, layoutBox ->
             try {
-                // 裁剪版面区域
-                val cropRect = android.graphics.Rect(
-                    layoutBox.boxPoint[0].x,
-                    layoutBox.boxPoint[0].y,
-                    layoutBox.boxPoint[2].x,
-                    layoutBox.boxPoint[2].y
-                )
+                // 判断是否为figure区域
+                val isFigure = layoutBox.typeName.lowercase().contains("figure") &&
+                        !layoutBox.typeName.lowercase().contains("caption")
 
-                // 确保裁剪区域在图像范围内
-                val safeCropRect = android.graphics.Rect(
-                    maxOf(0, cropRect.left),
-                    maxOf(0, cropRect.top),
-                    minOf(originalImg.width, cropRect.right),
-                    minOf(originalImg.height, cropRect.bottom)
-                )
+                if (isFigure) {
+                    val cropRect = android.graphics.Rect(
+                        layoutBox.boxPoint[0].x,
+                        layoutBox.boxPoint[0].y,
+                        layoutBox.boxPoint[2].x,
+                        layoutBox.boxPoint[2].y
+                    )
 
-                if (safeCropRect.width() > 10 && safeCropRect.height() > 10) {
-                    // 裁剪区域图像
+                    val safeCropRect = android.graphics.Rect(
+                        maxOf(0, cropRect.left),
+                        maxOf(0, cropRect.top),
+                        minOf(originalImg.width, cropRect.right),
+                        minOf(originalImg.height, cropRect.bottom)
+                    )
+
+                    // 计算最小尺寸阈值：图片宽度的5%或高度的5%
+                    val minWidth = (originalImg.width * 0.05).toInt().coerceAtLeast(30)
+                    val minHeight = (originalImg.height * 0.05).toInt().coerceAtLeast(30)
+
+                    // 过滤掉太小的区域（可能是icon）
+                    if (safeCropRect.width() < minWidth || safeCropRect.height() < minHeight) {
+                        Logger.i("区域${index + 1} 尺寸过小(${safeCropRect.width()}x${safeCropRect.height()})，跳过视为icon")
+                        // 作为普通文本区域处理
+                        val finalLayoutBox = com.benjaminwan.ocrlibrary.LayoutBox(
+                            boxPoint = layoutBox.boxPoint,
+                            score = layoutBox.score,
+                            type = layoutBox.type,
+                            typeName = "plain text|icon区域"
+                        )
+                        updatedLayoutBoxes.add(finalLayoutBox)
+                        return@forEachIndexed
+                    }
+
+                    // Figure区域：跳过通用OCR，只裁剪保存图片
+                    figureCount++
+                    Logger.i("Figure ${figureCount} 检测到，尺寸: ${safeCropRect.width()}x${safeCropRect.height()}")
+
+                    // 裁剪并保存figure图片（不做OCR）
                     val croppedBitmap = Bitmap.createBitmap(
                         originalImg,
                         safeCropRect.left,
@@ -536,48 +633,82 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
                         safeCropRect.height()
                     )
 
-                    // 对裁剪区域进行OCR识别
-                    val ocrOutput = Bitmap.createBitmap(
-                        croppedBitmap.width,
-                        croppedBitmap.height,
-                        Bitmap.Config.ARGB_8888
-                    )
+                    // 保存figure图片
+                    val imagePath = saveFigureImage(croppedBitmap, figureCount)
 
-                    // 使用现有OCR引擎识别内容
-                    val ocrResult = App.ocrEngine.detect(
-                        croppedBitmap,
-                        ocrOutput,
-                        maxSideLen = maxOf(croppedBitmap.width, croppedBitmap.height)
-                    )
+                    // 存储图片路径（不做OCR识别）
+                    figureResults[figureCount] = FigureInfo(ocrText = "", imagePath = imagePath)
+                    Logger.i("Figure ${figureCount} 图片已保存: $imagePath")
 
-                    // 创建包含OCR内容的LayoutBox
-                    val updatedLayoutBox = com.benjaminwan.ocrlibrary.LayoutBox(
-                        boxPoint = layoutBox.boxPoint,
-                        score = layoutBox.score,
-                        type = layoutBox.type,
-                        typeName = layoutBox.typeName
-                    )
+                    croppedBitmap.recycle()
 
-                    // 将OCR识别的真实内容存储在LayoutBox的typeName字段中
-                    // 临时解决方案：将OCR结果附加到typeName中
-                    val ocrContent = if (ocrResult.strRes.isNotEmpty()) {
-                        ocrResult.strRes.trim()
-                    } else {
-                        ""
-                    }
-
-                    // 创建包含真实OCR内容的LayoutBox
+                    // 存储特殊标记
                     val finalLayoutBox = com.benjaminwan.ocrlibrary.LayoutBox(
                         boxPoint = layoutBox.boxPoint,
                         score = layoutBox.score,
                         type = layoutBox.type,
-                        typeName = "${layoutBox.typeName}|$ocrContent"  // 用|分隔原始类型和OCR内容
+                        typeName = "figure|skipped|figure_${figureCount}"
+                    )
+                    updatedLayoutBoxes.add(finalLayoutBox)
+
+                } else {
+                    // 非figure区域：正常进行OCR识别
+                    val cropRect = android.graphics.Rect(
+                        layoutBox.boxPoint[0].x,
+                        layoutBox.boxPoint[0].y,
+                        layoutBox.boxPoint[2].x,
+                        layoutBox.boxPoint[2].y
                     )
 
-                    Logger.i("区域${index + 1}(${layoutBox.typeName}) OCR结果: $ocrContent")
-                    updatedLayoutBoxes.add(finalLayoutBox)
-                } else {
-                    updatedLayoutBoxes.add(layoutBox)
+                    val safeCropRect = android.graphics.Rect(
+                        maxOf(0, cropRect.left),
+                        maxOf(0, cropRect.top),
+                        minOf(originalImg.width, cropRect.right),
+                        minOf(originalImg.height, cropRect.bottom)
+                    )
+
+                    if (safeCropRect.width() > 10 && safeCropRect.height() > 10) {
+                        val croppedBitmap = Bitmap.createBitmap(
+                            originalImg,
+                            safeCropRect.left,
+                            safeCropRect.top,
+                            safeCropRect.width(),
+                            safeCropRect.height()
+                        )
+
+                        val ocrOutput = Bitmap.createBitmap(
+                            croppedBitmap.width,
+                            croppedBitmap.height,
+                            Bitmap.Config.ARGB_8888
+                        )
+
+                        val ocrResult = App.ocrEngine.detect(
+                            croppedBitmap,
+                            ocrOutput,
+                            maxSideLen = maxOf(croppedBitmap.width, croppedBitmap.height)
+                        )
+
+                        val ocrContent = if (ocrResult.strRes.isNotEmpty()) {
+                            ocrResult.strRes.trim()
+                        } else {
+                            ""
+                        }
+
+                        val finalLayoutBox = com.benjaminwan.ocrlibrary.LayoutBox(
+                            boxPoint = layoutBox.boxPoint,
+                            score = layoutBox.score,
+                            type = layoutBox.type,
+                            typeName = "${layoutBox.typeName}|$ocrContent"
+                        )
+
+                        Logger.i("区域${index + 1}(${layoutBox.typeName}) OCR结果: $ocrContent")
+                        updatedLayoutBoxes.add(finalLayoutBox)
+
+                        croppedBitmap.recycle()
+                        ocrOutput.recycle()
+                    } else {
+                        updatedLayoutBoxes.add(layoutBox)
+                    }
                 }
             } catch (e: Exception) {
                 Logger.e("区域${index + 1} OCR识别失败: ${e.message}")
@@ -585,148 +716,131 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
             }
         }
 
-        // 返回更新后的LayoutResult（需要修改LayoutResult类存储OCR内容）
+        // 先创建包含新boxes的中间result
+        val newLayoutResult = com.benjaminwan.ocrlibrary.LayoutResult(
+            layoutNetTime = layoutResult.layoutNetTime,
+            layoutBoxes = ArrayList(updatedLayoutBoxes),
+            layoutImg = layoutResult.layoutImg,
+            markdown = ""
+        )
+
+        // 使用新boxes生成markdown
+        val markdown = generateRealMarkdown(newLayoutResult, figureResults)
+
+        // 返回更新后的LayoutResult
         return com.benjaminwan.ocrlibrary.LayoutResult(
             layoutNetTime = layoutResult.layoutNetTime,
             layoutBoxes = ArrayList(updatedLayoutBoxes),
             layoutImg = layoutResult.layoutImg,
-            markdown = generateRealMarkdown(layoutResult)
+            markdown = markdown
         )
     }
 
-    // 生成标准Markdown格式 - 符合渲染规范
-    private fun generateRealMarkdown(layoutResult: com.benjaminwan.ocrlibrary.LayoutResult): String {
+    // 保存figure图像到文件并返回文件路径
+    private fun saveFigureImage(bitmap: Bitmap, figureNum: Int): String {
+        return try {
+            val timestamp = System.currentTimeMillis()
+            val fileName = "figure_${figureNum}_${timestamp}.png"
+
+            // 保存到公共Pictures目录
+            val outputDir = getOutputDir()
+            val file = File(outputDir, fileName)
+
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 85, out)
+            }
+
+            Logger.i("Figure图像已保存: ${file.absolutePath}")
+
+            // 返回文件路径
+            file.absolutePath
+        } catch (e: Exception) {
+            Logger.e("保存figure图像失败: ${e.message}")
+            ""
+        }
+    }
+
+    // 获取输出目录
+    private fun getOutputDir(): File {
+        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        val outputDir = File(picturesDir, "RapidOcrResult")
+        if (!outputDir.exists()) {
+            outputDir.mkdirs()
+        }
+        return outputDir
+    }
+
+    // 生成简化Markdown格式 - 使用base64嵌入图片
+    private fun generateRealMarkdown(
+        layoutResult: com.benjaminwan.ocrlibrary.LayoutResult,
+        figureResults: Map<Int, FigureInfo> = emptyMap()
+    ): String {
         val markdown = StringBuilder()
-        markdown.appendLine("# Document Layout Analysis\n")
 
         // 按Y坐标排序
         val sortedBoxes = layoutResult.layoutBoxes.sortedBy { it.boxPoint[0].y }
 
-        // 解析真实OCR内容并统计各类别
-        val parsedBoxes = sortedBoxes.map { box ->
+        var figureNum = 0
+        var tableNum = 0
+
+        for (box in sortedBoxes) {
+            val typeName = box.typeName.lowercase()
             val parts = box.typeName.split("|", limit = 2)
-            val originalType = parts[0]
+            val originalType = parts.getOrElse(0) { "" }
             val ocrContent = if (parts.size > 1) parts[1] else ""
-            Triple(box, originalType, ocrContent)
-        }
 
-        val stats = parsedBoxes.groupBy { it.second }.mapValues { it.value.size }
-
-        // 文档概览 - 标准Markdown表格
-        markdown.appendLine("## Document Summary\n")
-        markdown.appendLine("| Type | Count | Description |")
-        markdown.appendLine("|------|-------|-------------|")
-        markdown.appendLine("| Text | ${stats["text"] ?: 0} | Paragraph content |")
-        markdown.appendLine("| Title | ${stats["title"] ?: 0} | Headings |")
-        markdown.appendLine("| Figure | ${stats["figure"] ?: 0} | Images/Charts |")
-        markdown.appendLine("| Table | ${stats["table"] ?: 0} | Data tables |")
-        markdown.appendLine("| List | ${stats["list"] ?: 0} | Lists/Bullet points |")
-        markdown.appendLine("| Formula | ${stats["formula"] ?: 0} | Math equations |")
-        markdown.appendLine("\n")
-
-        markdown.appendLine("## Document Structure\n")
-
-        parsedBoxes.forEachIndexed { index, (box, type, ocrContent) ->
-            when (type) {
-                "title" -> {
-                    val titleText = if (ocrContent.isNotEmpty()) ocrContent.trim() else "Title ${index + 1}"
+            when {
+                // Title - 使用###标题
+                originalType == "title" -> {
+                    val titleText = ocrContent.trim().ifEmpty { "标题" }
                     markdown.appendLine("### $titleText")
-                    markdown.appendLine("*Confidence: ${(box.score * 100).toInt()}%*  \n")
+                    markdown.appendLine()
                 }
-                "text" -> {
-                    val textContent = if (ocrContent.isNotEmpty()) ocrContent.trim() else "(No text recognized)"
-                    markdown.appendLine("#### Text Region")
-                    markdown.appendLine("$textContent")
-                    markdown.appendLine("*Confidence: ${(box.score * 100).toInt()}%*  \n")
-                }
-                "figure" -> {
-                    val figureText = if (ocrContent.isNotEmpty()) ocrContent.trim() else ""
-                    val figureDescription = if (figureText.isNotEmpty()) " - $figureText" else ""
-                    markdown.appendLine("#### Figure$figureDescription")
-                    markdown.appendLine("```")
-                    markdown.appendLine("┌─────────────────────────────────┐")
-                    markdown.appendLine("│        IMAGE/CHART REGION        │")
-                    markdown.appendLine("├─────────────────────────────────┤")
-                    if (ocrContent.isNotEmpty()) {
-                        markdown.appendLine("│ Caption: ${figureText.padEnd(27)} │")
-                    } else {
-                        markdown.appendLine("│ [Image Content]                 │")
+                // Plain text - 直接输出文本
+                originalType == "plain text" || originalType == "text" -> {
+                    val textContent = ocrContent.trim()
+                    if (textContent.isNotEmpty()) {
+                        markdown.appendLine(textContent)
+                        markdown.appendLine()
                     }
-                    markdown.appendLine("├─────────────────────────────────┤")
-                    markdown.appendLine("│ Position: (${box.boxPoint[0].x},${box.boxPoint[0].y}) │")
-                    markdown.appendLine("│ Size: ${box.boxPoint[2].x-box.boxPoint[0].x}x${box.boxPoint[2].y-box.boxPoint[0].y} │")
-                    markdown.appendLine("└─────────────────────────────────┘")
-                    markdown.appendLine("```")
-                    markdown.appendLine("![Figure${index + 1}](image://region_${index})")
-                    markdown.appendLine("\n")
                 }
-                "table" -> {
-                    val tableText = if (ocrContent.isNotEmpty()) ocrContent.trim() else ""
-                    markdown.appendLine("#### Table$tableText")
-                    markdown.appendLine("``")
-                    if (ocrContent.isNotEmpty()) {
-                        // 显示原始OCR识别的表格内容，保留结构
-                        val rows = ocrContent.split("\n").take(10)
-                        rows.forEach { row ->
-                            if (row.trim().isNotEmpty()) {
-                                markdown.appendLine(row.trim())
-                            }
-                        }
-                    } else {
-                        markdown.appendLine("+----------------+----------------+----------------+")
-                        markdown.appendLine("| Column 1      | Column 2      | Column 3      |")
-                        markdown.appendLine("+----------------+----------------+----------------+")
-                        markdown.appendLine("| Data 1        | Data 2        | Data 3        |")
-                        markdown.appendLine("+----------------+----------------+----------------+")
+                // Figure - 直接输出HTML img标签
+                typeName.contains("figure") && !typeName.contains("caption") -> {
+                    figureNum++
+                    val figureInfo = figureResults[figureNum]
+                    val imagePath = figureInfo?.imagePath ?: ""
+
+                    markdown.appendLine("**图 $figureNum**")
+                    if (imagePath.isNotEmpty()) {
+                        // 直接输出HTML img标签，使用完整路径
+                        markdown.appendLine("<img src=\"file://$imagePath\" style=\"max-width:100%;margin:10px 0;border-radius:4px;\"/>")
                     }
-                    markdown.appendLine("```")
-                    markdown.appendLine("*Confidence: ${(box.score * 100).toInt()}%*  \n")
+                    markdown.appendLine()
                 }
-                "list" -> {
-                    val listText = if (ocrContent.isNotEmpty()) " - ${ocrContent.trim()}" else ""
-                    markdown.appendLine("#### List$listText")
-                    if (ocrContent.isNotEmpty()) {
-                        val items = ocrContent.split("\n").take(8) // 最多显示8项
-                        items.forEach { item ->
-                            if (item.trim().isNotEmpty()) {
-                                val cleanItem = item.trim()
-                                    .replace(Regex("^[•·▪▫▬○●■□▪▫▬\\-]+\\s*"), "") // 移除列表符号
-                                    .replace(Regex("^\\d+[\\.\\)\\s]+"), "") // 移除数字编号
-                                markdown.appendLine("- $cleanItem")
-                            }
-                        }
-                    } else {
-                        markdown.appendLine("- Item 1")
-                        markdown.appendLine("- Item 2")
-                        markdown.appendLine("- Item 3")
-                    }
-                    markdown.appendLine("")
+                // Figure caption
+                typeName.contains("figure_caption") -> {
+                    markdown.appendLine("*图 $figureNum*")
+                    markdown.appendLine()
                 }
-                "formula" -> {
-                    val formulaText = if (ocrContent.isNotEmpty()) ocrContent.trim() else "E = mc^2"
-                    markdown.appendLine("#### Formula")
-                    markdown.appendLine("```")
-                    markdown.appendLine(formulaText)
-                    markdown.appendLine("```")
-                    markdown.appendLine("*Confidence: ${(box.score * 100).toInt()}%*  \n")
+                // Table
+                typeName.contains("table") && !typeName.contains("caption") -> {
+                    tableNum++
+                    markdown.appendLine("**表 $tableNum**")
+                    markdown.appendLine()
                 }
-                else -> {
-                    val unknownText = if (ocrContent.isNotEmpty()) ocrContent.trim() else ""
-                    markdown.appendLine("#### Other Region - $type$unknownText")
-                    markdown.appendLine("*Confidence: ${(box.score * 100).toInt()}%*  \n")
+                // Table caption
+                typeName.contains("table_caption") -> {
+                    markdown.appendLine("*表 $tableNum*")
+                    markdown.appendLine()
+                }
+                // Formula
+                typeName.contains("formula") || typeName.contains("isolate_formula") -> {
+                    val formulaText = ocrContent.trim().ifEmpty { "公式区域" }
+                    markdown.appendLine("$$formulaText$$")
+                    markdown.appendLine()
                 }
             }
         }
-
-        markdown.appendLine("---\n")
-        markdown.appendLine("## Technical Details\n")
-        markdown.appendLine("- **Analysis Model**: RapidLayout + PP-YOLOE")
-        markdown.appendLine("- **OCR Engine**: RapidOCR v3")
-        markdown.appendLine("- **Processing Time**: ${layoutResult.layoutNetTime.toInt()}ms")
-        markdown.appendLine("- **Detected Regions**: ${layoutResult.layoutBoxes.size}")
-        markdown.appendLine("- **Platform**: Android + ONNX Runtime")
-        markdown.appendLine("\n")
-        markdown.appendLine("*Generated by Layout2Markdown - Layout Analysis + OCR Recognition*")
 
         return markdown.toString()
     }
@@ -765,5 +879,197 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
         }
     }
 
+    /**
+     * 测试Figure跳过功能
+     * 只对figure区域进行裁剪和保存，不进行通用OCR
+     */
+    private fun testFigureSkip(img: Bitmap) {
+        flow {
+            emit(ProgressUpdate("开始Figure跳过测试...", 10))
+            kotlinx.coroutines.delay(100)
+
+            val outputImg: Bitmap = Bitmap.createBitmap(
+                img.width, img.height, Bitmap.Config.ARGB_8888
+            )
+
+            emit(ProgressUpdate("执行版面分析...", 30))
+            kotlinx.coroutines.delay(100)
+
+            // 执行版面分析
+            var result = App.ocrEngine.detectLayout(img, outputImg, App.ocrEngine.layoutScoreThresh)
+
+            // 统计figure区域
+            val figureCount = result.layoutBoxes.count {
+                it.typeName.lowercase().contains("figure") && !it.typeName.lowercase().contains("caption")
+            }
+
+            emit(ProgressUpdate("检测到 $figureCount 个Figure区域...", 50))
+            kotlinx.coroutines.delay(100)
+
+            // 裁剪保存所有figure区域
+            emit(ProgressUpdate("裁剪并保存Figure区域...", 70))
+
+            var savedCount = 0
+            result.layoutBoxes.forEachIndexed { index, layoutBox ->
+                val isFigure = layoutBox.typeName.lowercase().contains("figure") &&
+                        !layoutBox.typeName.lowercase().contains("caption")
+
+                if (isFigure) {
+                    savedCount++
+                    val cropRect = android.graphics.Rect(
+                        layoutBox.boxPoint[0].x,
+                        layoutBox.boxPoint[0].y,
+                        layoutBox.boxPoint[2].x,
+                        layoutBox.boxPoint[2].y
+                    )
+                    val safeCropRect = android.graphics.Rect(
+                        maxOf(0, cropRect.left),
+                        maxOf(0, cropRect.top),
+                        minOf(img.width, cropRect.right),
+                        minOf(img.height, cropRect.bottom)
+                    )
+                    if (safeCropRect.width() > 10 && safeCropRect.height() > 10) {
+                        val croppedBitmap = Bitmap.createBitmap(
+                            img,
+                            safeCropRect.left,
+                            safeCropRect.top,
+                            safeCropRect.width(),
+                            safeCropRect.height()
+                        )
+                        saveFigureImage(croppedBitmap, savedCount)
+                        croppedBitmap.recycle()
+                    }
+                }
+            }
+
+            emit(ProgressUpdate("保存了 $savedCount 个Figure区域", 90))
+            kotlinx.coroutines.delay(100)
+
+            emit(ProgressUpdate("测试完成！", 100))
+            kotlinx.coroutines.delay(100)
+
+            // 显示结果
+            val testResult = buildString {
+                appendLine("=== Figure跳过测试结果 ===")
+                appendLine()
+                appendLine("检测到的区域数量: ${result.layoutBoxes.size}")
+                appendLine("Figure区域数量: $figureCount")
+                appendLine("保存的Figure图像: $savedCount")
+                appendLine()
+                appendLine("区域详情:")
+                result.layoutBoxes.forEachIndexed { idx, box ->
+                    appendLine("  ${idx + 1}. ${box.typeName} (置信度: ${(box.score * 100).toInt()}%)")
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                AlertDialog.Builder(this@GalleryActivity)
+                    .setTitle("Figure跳过测试结果")
+                    .setMessage(testResult)
+                    .setPositiveButton("确定", null)
+                    .show()
+            }
+
+        }.flowOn(Dispatchers.IO)
+            .onStart {
+                binding.progressLayout.visibility = View.VISIBLE
+                binding.testFigureSkipBtn.isEnabled = false
+                binding.testAllBtn.isEnabled = false
+            }
+            .onCompletion {
+                binding.testFigureSkipBtn.isEnabled = true
+                binding.testAllBtn.isEnabled = true
+                binding.progressLayout.visibility = View.GONE
+            }
+            .onEach { result ->
+                if (result is ProgressUpdate) {
+                    withContext(Dispatchers.Main) {
+                        binding.progressText.text = result.message
+                        binding.progressBar.progress = result.progress
+                    }
+                }
+            }.launchIn(lifecycleScope)
+    }
+
+    /**
+     * 完整测试流程：版面分析 + Figure跳过 + Markdown生成
+     */
+    private fun testFullPipeline(img: Bitmap) {
+        flow {
+            emit(ProgressUpdate("开始完整测试...", 5))
+            kotlinx.coroutines.delay(100)
+
+            val outputImg: Bitmap = Bitmap.createBitmap(
+                img.width, img.height, Bitmap.Config.ARGB_8888
+            )
+
+            emit(ProgressUpdate("1. 执行版面分析...", 20))
+            kotlinx.coroutines.delay(100)
+
+            // 执行版面分析
+            var layoutRes = App.ocrEngine.detectLayout(img, outputImg, App.ocrEngine.layoutScoreThresh)
+
+            emit(ProgressUpdate("2. 识别版面内容 (跳过Figure)...", 40))
+            kotlinx.coroutines.delay(100)
+
+            // 对非figure区域进行OCR
+            layoutRes = recognizeLayoutContent(img, layoutRes)
+
+            emit(ProgressUpdate("3. 完成 (Markdown已生成)", 90))
+            kotlinx.coroutines.delay(100)
+
+            // 统计
+            val figureCount = layoutRes.layoutBoxes.count {
+                it.typeName.lowercase().contains("figure") && !it.typeName.lowercase().contains("caption")
+            }
+            val textCount = layoutRes.layoutBoxes.count {
+                it.typeName.lowercase().contains("text") || it.typeName.lowercase().contains("plain")
+            }
+            val tableCount = layoutRes.layoutBoxes.count {
+                it.typeName.lowercase().contains("table") && !it.typeName.lowercase().contains("caption")
+            }
+
+            emit(ProgressUpdate("测试完成！", 100))
+            kotlinx.coroutines.delay(100)
+
+            withContext(Dispatchers.Main) {
+                // 保存结果
+                layoutResult = layoutRes
+                binding.timeTV.text = "处理时间:${layoutRes.layoutNetTime.toInt()}ms"
+                Glide.with(this@GalleryActivity).load(layoutRes.layoutImg).apply(glideOptions).into(binding.imageView)
+                binding.layoutResultBtn.isEnabled = true
+                binding.markdownBtn.isEnabled = true
+
+                // 显示统计信息
+                val statsInfo = "处理完成！\n\n区域统计:\n  - Figure: $figureCount 个\n  - 文本: $textCount 个\n  - 表格: $tableCount 个\n  - 总计: ${layoutRes.layoutBoxes.size} 个\n\n点击\"查看完整Markdown\"按钮查看全部结果"
+                AlertDialog.Builder(this@GalleryActivity)
+                    .setTitle("完整测试完成")
+                    .setMessage(statsInfo)
+                    .setPositiveButton("查看完整Markdown") { _, _ ->
+                        showFullMarkdownResults(layoutRes)
+                    }
+                    .setNegativeButton("关闭", null)
+                    .show()
+            }
+
+        }.flowOn(Dispatchers.IO)
+            .onStart {
+                binding.progressLayout.visibility = View.VISIBLE
+                binding.testFigureSkipBtn.isEnabled = false
+                binding.testAllBtn.isEnabled = false
+            }
+            .onCompletion {
+                binding.testFigureSkipBtn.isEnabled = true
+                binding.testAllBtn.isEnabled = true
+            }
+            .onEach { result ->
+                if (result is ProgressUpdate) {
+                    withContext(Dispatchers.Main) {
+                        binding.progressText.text = result.message
+                        binding.progressBar.progress = result.progress
+                    }
+                }
+            }.launchIn(lifecycleScope)
+    }
 
 }
