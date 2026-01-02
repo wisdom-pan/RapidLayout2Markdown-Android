@@ -134,3 +134,7 @@ RapidOcrAndroidOnnx
 
 ![avatar](capture/detect_plate.gif)
 
+unzip -l /Users/wisdompan/Documents/projects/Layout2Markdown/RapidOcrAndroidOnnx/app/libs/docscanner-sdk-debug.aar | grep -E "\.so|classes"
+
+
+adb -s 10.17.11.11:32797 logcat | grep -E  "(AndroidRuntime|CRASH|Exception|Error)"  tail 50

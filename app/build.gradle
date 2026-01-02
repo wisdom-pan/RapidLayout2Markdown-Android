@@ -27,6 +27,10 @@ android {
         versionName project_version_name
         signingConfig signingConfigs.ocr
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+            stl 'c++_shared'
+        }
     }
 
     buildTypes {
@@ -59,10 +63,23 @@ android {
     viewBinding {
         enabled = true
     }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // 使用 OcrLibrary 的 libonnxruntime.so
+            pickFirsts += ['lib/arm64-v8a/libonnxruntime.so', 'lib/armeabi-v7a/libonnxruntime.so', 'lib/x86/libonnxruntime.so', 'lib/x86_64/libonnxruntime.so']
+        }
+    }
 }
 
 dependencies {
-    implementation fileTree(dir: "libs", include: ["*.jar"])
+    implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'

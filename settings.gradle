@@ -19,5 +19,6 @@ dependencyResolutionManagement {
 rootProject.name = "RapidOcrAndroidOnnx"
 include ':app'
 include ':OcrLibrary'
+include ':DocLayoutSdk'
 // Temporarily disabled appjava module due to compilation issues
 // include ':appjava'
