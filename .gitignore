@@ -1,0 +1,68 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+
+# Gradle files
+.gradle/
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+
+# NDK
+.externalNativeBuild/
+.cxx/
+
+# IntelliJ
+*.iws
+/out/
+
+# Keystore files
+*.jks
+*.keystore
+
+# Google Services
+google-services.json
+
+# Log Files
+*.log
+
+# OS generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor directories and files
+.project
+.classpath
+.settings/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Package Files
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# built cache files - 编译缓存文件会被追踪（如果需要）
+# 如需忽略，请取消下面注释
+# build/
+# .gradle/
