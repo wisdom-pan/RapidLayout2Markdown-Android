@@ -1,21 +1,41 @@
 package com.benjaminwan.ocr.onnx
 
+import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.widget.ImageView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.benjaminwan.ocr.onnx.databinding.ActivityMainBinding
+import com.github.chrisbanes.photoview.PhotoView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity(), View.OnClickListener {
     private lateinit var binding: ActivityMainBinding
 
+    private val galleryLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                // TODO: 处理选中的图片 - OCR 功能
+                Toast.makeText(this, "图片已选中: $uri", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     private fun initViews() {
         binding.galleryBtn.setOnClickListener(this)
-        // Temporarily disable camera-related buttons due to missing dependencies
-        // binding.cameraBtn.setOnClickListener(this)
-        // binding.imeiBtn.setOnClickListener(this)
-        // binding.plateBtn.setOnClickListener(this)
-        // binding.idCardBtn.setOnClickListener(this) // Temporarily disabled due to missing dependencies
+        binding.docScanBtn.setOnClickListener(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,21 +51,18 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
             R.id.galleryBtn -> {
                 startActivity(Intent(this, GalleryActivity::class.java))
             }
-            // Camera-related activities temporarily disabled due to missing dependencies
-            // R.id.cameraBtn -> {
-            //     startActivity(Intent(this, CameraActivity::class.java))
-            // }
-            // R.id.imeiBtn -> {
-            //     startActivity(Intent(this, ImeiActivity::class.java))
-            // }
-            // R.id.plateBtn -> {
-            //     startActivity(Intent(this, PlateActivity::class.java))
-            // }
-            // R.id.idCardBtn -> {
-            //     startActivity(Intent(this, IdCardFrontActivity::class.java))
-            // }
+            R.id.docScanBtn -> {
+                val intent = Intent(Intent.ACTION_PICK).apply {
+                    type = "image/*"
+                }
+                galleryLauncher.launch(intent)
+            }
             else -> {
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
     }
 }

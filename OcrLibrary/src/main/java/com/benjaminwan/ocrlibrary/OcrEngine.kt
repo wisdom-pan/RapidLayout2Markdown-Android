@@ -23,14 +23,14 @@ class OcrEngine(context: Context) {
     }
 
     var padding: Int = 50
-    var boxScoreThresh: Float = 0.5f
-    var boxThresh: Float = 0.3f
+    var boxScoreThresh: Float = 0.3f  // 降低阈值以识别更多文本
+    var boxThresh: Float = 0.15f      // 降低阈值以检测更多文字区域
     var unClipRatio: Float = 1.6f
     var doAngle: Boolean = true
     var mostAngle: Boolean = true
 
-    // DOCLAYOUT_DOCSTRUCTBENCH 专用参数 - 与best_demo.py保持一致
-    var layoutScoreThresh: Float = 0.2f  // 与Python best_demo.py的conf_thresh=0.2保持一致
+    // DOCLAYOUT_DOCSTRUCTBENCH 专用参数
+    var layoutScoreThresh: Float = 0.1f  // 降低阈值以检测更多版面区域
 
     fun detect(input: Bitmap, output: Bitmap, maxSideLen: Int) =
         detect(

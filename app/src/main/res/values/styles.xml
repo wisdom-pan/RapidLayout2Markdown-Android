@@ -68,4 +68,14 @@
         <item name="android:gravity">center</item>
     </style>
 
+    <!-- 全屏对话框样式 -->
+    <style name="FullScreenDialogStyle" parent="Theme.AppCompat.Light.Dialog">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="windowMinWidthMajor">95%</item>
+        <item name="windowMinWidthMinor">95%</item>
+    </style>
+
 </resources>
