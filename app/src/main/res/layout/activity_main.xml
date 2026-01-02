@@ -37,4 +37,10 @@
         android:layout_height="wrap_content"
         android:text="身份证人像面识别" />
 
+    <Button
+        android:id="@+id/docScanBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="文档扫描测试" />
+
 </LinearLayout>

@@ -289,4 +289,31 @@
 
     </LinearLayout>
 
+    <!-- 测试功能按钮 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/testFigureSkipBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="测试Figure跳过"
+            android:textSize="12sp"
+            android:backgroundTint="#9C27B0" />
+
+        <Button
+            android:id="@+id/testAllBtn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="完整测试"
+            android:textSize="12sp"
+            android:backgroundTint="#00BCD4" />
+
+    </LinearLayout>
+
 </LinearLayout>
