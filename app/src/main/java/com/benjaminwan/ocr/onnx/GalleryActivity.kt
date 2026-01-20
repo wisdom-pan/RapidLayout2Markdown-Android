@@ -31,6 +31,7 @@ import com.benjaminwan.ocr.onnx.dialog.FullMarkdownDialogFragment
 import com.benjaminwan.ocr.onnx.utils.decodeUri
 import com.benjaminwan.ocr.onnx.utils.showToast
 import com.benjaminwan.ocrlibrary.OcrResult
+import com.benjaminwan.ocrlibrary.OcrPostProcessor
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
@@ -167,7 +168,7 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
                 // Simple text display dialog instead of removed TextResultDialog
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("识别结果")
-                    .setMessage(result.strRes)
+                    .setMessage(result.getFixedResult())
                     .setPositiveButton("确定", null)
                     .show()
             }
@@ -688,8 +689,9 @@ class GalleryActivity : AppCompatActivity(), View.OnClickListener, SeekBar.OnSee
                             maxSideLen = maxOf(croppedBitmap.width, croppedBitmap.height)
                         )
 
+                        // 应用后处理修复OCR错误
                         val ocrContent = if (ocrResult.strRes.isNotEmpty()) {
-                            ocrResult.strRes.trim()
+                            OcrPostProcessor.fixOcrErrors(ocrResult.strRes.trim())
                         } else {
                             ""
                         }
